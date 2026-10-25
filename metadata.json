@@ -1,0 +1,6 @@
+{
+  "name": "REDLINE: Electric Racing Experience",
+  "description": "A high-octane 3D electric sports car racing simulator featuring Tesla-inspired vehicles, dynamic highway traffic, sleek cyber cities, and procedural audio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

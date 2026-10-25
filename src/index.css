@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@theme {
+  --font-racing: "Orbitron", "Rajdhani", sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --color-racing-red: #FF2020;
+  --color-deep-red: #B00020;
+  --color-neon-accent: #FF4545;
+  --color-surface-black: #111111;
+  --color-secondary-surface: #1B1B1B;
+  --color-bg-black: #070707;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background-color: #070707;
+  color: #F5F5F5;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.font-racing {
+  font-family: var(--font-racing);
+}
+
+/* Glassmorphism styling without backdrop-filter over active canvas */
+.hud-panel {
+  background: rgba(17, 17, 17, 0.88);
+  border: 1px solid rgba(255, 32, 32, 0.25);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7);
+}
+
+.hud-panel-glow {
+  background: rgba(17, 17, 17, 0.92);
+  border: 1px solid rgba(255, 32, 32, 0.5);
+  box-shadow: 0 0 20px rgba(255, 32, 32, 0.2), inset 0 0 15px rgba(255, 32, 32, 0.05);
+}
+
+.clip-speedo {
+  clip-path: polygon(10% 0%, 90% 0%, 100% 100%, 0% 100%);
+}
+
+.clip-banner {
+  clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+}
+
+/* Custom sleek scrollbar for menus */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #111111;
+}
+::-webkit-scrollbar-thumb {
+  background: #B00020;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF2020;
+}
