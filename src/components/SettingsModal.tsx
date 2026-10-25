@@ -124,6 +124,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
+              {/* Track Weather & Wet Road Surface */}
+              <div>
+                <label className="text-xs font-mono text-[#A3A3A3] block mb-2 uppercase">
+                  Track Weather & Wet Road Surface
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {([
+                    { id: 'AUTO_DIFFICULTY', label: 'Dynamic Auto' },
+                    { id: 'CLEAR_NIGHT', label: 'Clear Night' },
+                    { id: 'RAIN_STORM', label: 'Rain Storm (Wet)' },
+                    { id: 'NEON_FOG', label: 'Neon Fog' },
+                  ] as const).map((w) => (
+                    <button
+                      key={w.id}
+                      onClick={() => update({ weather: w.id })}
+                      className={`py-2.5 px-2 rounded-xl border text-[11px] font-racing font-bold cursor-pointer transition-all text-center ${
+                        settings.weather === w.id
+                          ? 'border-[#FF2020] bg-[#1B1B1B] text-white shadow-[0_0_10px_rgba(255,32,32,0.3)]'
+                          : 'border-white/10 bg-[#111111] text-[#A3A3A3] hover:border-white/20'
+                      }`}
+                    >
+                      {w.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-[#A3A3A3] mt-1.5 font-mono">
+                  Rain storms activate wet asphalt shaders, tire spray mist, hydroplaning physics, and lightning flashes.
+                </p>
+              </div>
+
               {/* Shadows */}
               <div className="flex justify-between items-center py-2 border-b border-white/5">
                 <div>

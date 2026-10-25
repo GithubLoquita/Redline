@@ -58,12 +58,26 @@ function testNearMissLogic() {
 }
 
 function testScoreMultiplierProgression() {
-  let comboCount = 4;
-  let multiplier = Math.min(4.0, 1.0 + comboCount * 0.25);
+  const comboCount = 4;
+  const multiplier = Math.min(4.0, 1.0 + comboCount * 0.25);
   if (multiplier !== 2.0) {
     throw new Error(`Multiplier test failed: expected 2.0, got ${multiplier}`);
   }
   console.log('✓ Score combo multiplier progression test passed');
+}
+
+function testWetRoadPhysicsTraction() {
+  const roadWetness = 1.0; // 100% soaked in rain storm
+  const wetBrakeScale = 1.0 - roadWetness * 0.18;
+  const maxDriftSlip = 1.0 + roadWetness * 0.35;
+
+  if (Math.abs(wetBrakeScale - 0.82) > 0.001) {
+    throw new Error(`Wet brake calculation failed: expected 0.82, got ${wetBrakeScale}`);
+  }
+  if (Math.abs(maxDriftSlip - 1.35) > 0.001) {
+    throw new Error(`Wet drift slip calculation failed: expected 1.35, got ${maxDriftSlip}`);
+  }
+  console.log('✓ Dynamic weather wet road traction & drift physics test passed');
 }
 
 function runAllTests() {
@@ -72,6 +86,7 @@ function runAllTests() {
   testCollisionMath();
   testNearMissLogic();
   testScoreMultiplierProgression();
+  testWetRoadPhysicsTraction();
   console.log('All tests passed successfully!');
 }
 

@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   steeringSensitivity: 1.0,
   steeringAssist: true,
   trafficDensity: 'NORMAL',
+  weather: 'AUTO_DIFFICULTY',
   shadows: true,
   particles: true,
   reducedMotion: false,

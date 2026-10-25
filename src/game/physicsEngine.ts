@@ -108,7 +108,7 @@ export class PhysicsEngine {
     this.x = 0;
     this.y = 0;
     this.z = startZ;
-    this.speed = 0;
+    this.speed = 8.5; // ~30 km/h initial forward rolling start
     this.steerAngle = 0;
     this.yaw = 0;
     this.roll = 0;
@@ -144,6 +144,7 @@ export class PhysicsEngine {
     car: CarComponents,
     settings: GameSettings,
     gameMode: string,
+    roadWetness = 0,
   ) {
     // Clamp delta time to avoid large jumps
     const delta = Math.min(dt, 0.1);
@@ -171,37 +172,49 @@ export class PhysicsEngine {
       }
     });
 
-    // 2. ACCELERATION & BRAKING
+    // 2. ACCELERATION, BRAKE & REVERSE (FORWARD / BACK)
     let targetAccel = 0;
     const accelInput = input.throttle ? 1 : input.throttleValue;
     const brakeInput = input.brake ? 1 : input.brakeValue;
 
     if (accelInput > 0) {
+      // Forward Drive
       let power = this.acceleration * accelInput;
       if (this.nitroActive) {
         power *= 1.45;
       }
       targetAccel += power;
+    } else if (brakeInput === 0 && this.speed >= 0 && this.speed < 15) {
+      // Gentle forward electric torque roll (up to ~54 km/h) so car never stalls
+      targetAccel += 10.0;
     }
 
     if (brakeInput > 0) {
-      targetAccel -= this.brakingForce * brakeInput;
+      if (this.speed > 0.5) {
+        // Forward motion braking
+        const wetBrakeScale = 1.0 - roadWetness * 0.18;
+        targetAccel -= this.brakingForce * brakeInput * wetBrakeScale;
+      } else {
+        // Back / Reverse motion!
+        targetAccel -= 18.0 * brakeInput;
+      }
     }
 
     // Aerodynamic Drag & Rolling Resistance
-    const drag = this.dragCoefficient * this.speed * this.speed;
-    const rollingResistance = 1.5;
-    const netAccel = targetAccel - drag - (this.speed > 0 ? rollingResistance : 0);
+    const drag = this.dragCoefficient * this.speed * Math.abs(this.speed);
+    const rollingResistance = Math.sign(this.speed) * 1.5;
+    const netAccel = targetAccel - drag - (Math.abs(this.speed) > 0.1 ? rollingResistance : 0);
 
     this.speed += netAccel * delta;
 
-    // Speed limits
+    // Speed limits (Forward top speed & Back/Reverse speed)
     const currentMaxSpeed = this.nitroActive ? this.maxSpeed * 1.25 : this.maxSpeed;
     if (this.speed > currentMaxSpeed) {
       this.speed = Math.max(currentMaxSpeed, this.speed - 15 * delta);
     }
-    if (this.speed < 0) {
-      this.speed = 0;
+    const maxReverseSpeed = -10; // ~ -36 km/h reverse
+    if (this.speed < maxReverseSpeed) {
+      this.speed = maxReverseSpeed;
     }
 
     // 3. STEERING & DRIFT
@@ -220,16 +233,20 @@ export class PhysicsEngine {
     // Smooth steering damp
     this.steerAngle += (targetSteerAngle - this.steerAngle) * Math.min(1, 14 * delta);
 
-    // Drift / Handbrake
+    // Drift / Handbrake with Wet Surface Dynamics
     const isDrifting = input.handbrake && this.speed > 15 && Math.abs(steerInput) > 0.3;
-    if (isDrifting) {
-      this.driftSlip += (1.0 - this.driftSlip) * 8 * delta;
-      // Slight speed bleed during drift
-      this.speed *= 1 - 0.08 * delta;
+    // Wet road enables sharper hydroplane drifts
+    const wetSlipThreshold = roadWetness > 0.3 && Math.abs(steerInput) > 0.7 && speedRatio > 0.65;
+
+    if (isDrifting || wetSlipThreshold) {
+      const maxSlip = 1.0 + roadWetness * 0.35;
+      this.driftSlip += (maxSlip - this.driftSlip) * (8 + roadWetness * 4) * delta;
+      // Slight speed bleed during drift (less speed bleed on wet slick asphalt)
+      this.speed *= 1 - (0.08 - roadWetness * 0.03) * delta;
       // Add drift points
       this.stats.score += Math.round(50 * delta * this.stats.multiplier);
     } else {
-      this.driftSlip += (0 - this.driftSlip) * 10 * delta;
+      this.driftSlip += (0 - this.driftSlip) * (10 - roadWetness * 3) * delta;
     }
 
     soundEngine.updateTireSqueal(this.driftSlip * 0.8 + (Math.abs(steerInput) > 0.8 && speedRatio > 0.6 ? 0.35 : 0));

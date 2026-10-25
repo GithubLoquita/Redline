@@ -5,10 +5,11 @@
 
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { CameraView, GameSettings, VehicleConfig } from '../types';
+import { CameraView, GameMode, GameSettings, VehicleConfig, WeatherType } from '../types';
 import { CarComponents, createPlayerCar } from './carBuilder';
 import { CityEnvironment } from './cityEnvironment';
 import { PhysicsEngine } from './physicsEngine';
+import { soundEngine } from '../audio/soundEngine';
 
 export class RacingScene {
   public container: HTMLElement;
@@ -26,6 +27,26 @@ export class RacingScene {
   public isSoftwareGl = false;
   public isShowroom = true;
   public cameraView: CameraView = 'CHASE';
+
+  // Dynamic Weather System
+  public activeWeather: 'CLEAR_NIGHT' | 'RAIN_STORM' | 'NEON_FOG' = 'CLEAR_NIGHT';
+  public wetness = 0.0; // 0.0 (bone dry) to 1.0 (monsoon soaked)
+  private targetWetness = 0.0;
+
+  // Rain particle system
+  public rainPoints: THREE.Points | null = null;
+  private rainPositions: Float32Array | null = null;
+  private rainCount = 1800;
+
+  // Tire spray mist particle system
+  public tireSprayPoints: THREE.Points | null = null;
+  private tireSprayPositions: Float32Array | null = null;
+  private tireSprayCount = 120;
+
+  // Lightning system
+  private lightningTimer = 8.0;
+  private isFlashingLightning = false;
+  private lightningFlashDuration = 0;
 
   // Showroom turntable variables
   private showroomAngle = 0;
@@ -63,6 +84,12 @@ export class RacingScene {
         return true;
       }
     })();
+
+    // Adjust particle count for mobile/software GL performance
+    if (this.isSoftwareGl || window.innerWidth < 768) {
+      this.rainCount = 700;
+      this.tireSprayCount = 50;
+    }
 
     // Initialize Renderer
     this.canvas = document.createElement('canvas');
@@ -139,8 +166,61 @@ export class RacingScene {
     this.playerCar = createPlayerCar(this.currentVehicleId, this.customColor);
     this.scene.add(this.playerCar.rootGroup);
 
+    // Dynamic Weather Particles Initialization
+    this.initWeatherParticles();
+
     this.setupShowroom();
     window.addEventListener('resize', this.onResize);
+  }
+
+  private initWeatherParticles() {
+    // 1. Rain Drops Particles
+    const rGeo = new THREE.BufferGeometry();
+    const rPositions = new Float32Array(this.rainCount * 3);
+
+    for (let i = 0; i < this.rainCount; i++) {
+      rPositions[i * 3] = (Math.random() - 0.5) * 36;
+      rPositions[i * 3 + 1] = Math.random() * 26;
+      rPositions[i * 3 + 2] = (Math.random() - 0.5) * 110;
+    }
+
+    rGeo.setAttribute('position', new THREE.BufferAttribute(rPositions, 3));
+    this.rainPositions = rPositions;
+
+    const rMat = new THREE.PointsMaterial({
+      color: 0x99ccff,
+      size: 0.32,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+
+    this.rainPoints = new THREE.Points(rGeo, rMat);
+    this.scene.add(this.rainPoints);
+
+    // 2. Tire Spray / Water Mist Particles
+    const sGeo = new THREE.BufferGeometry();
+    const sPositions = new Float32Array(this.tireSprayCount * 3);
+
+    for (let i = 0; i < this.tireSprayCount; i++) {
+      sPositions[i * 3] = (Math.random() - 0.5) * 2;
+      sPositions[i * 3 + 1] = 0.1 + Math.random() * 0.8;
+      sPositions[i * 3 + 2] = -2 - Math.random() * 6;
+    }
+
+    sGeo.setAttribute('position', new THREE.BufferAttribute(sPositions, 3));
+    this.tireSprayPositions = sPositions;
+
+    const sMat = new THREE.PointsMaterial({
+      color: 0xccddee,
+      size: 0.45,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+
+    this.tireSprayPoints = new THREE.Points(sGeo, sMat);
+    this.scene.add(this.tireSprayPoints);
   }
 
   public setVehicle(vehicleId: string, customColor?: string, config?: VehicleConfig) {
@@ -166,6 +246,13 @@ export class RacingScene {
     this.playerCar.rootGroup.rotation.set(0, 0, 0);
     this.camera.position.set(4.5, 1.8, 4.5);
     this.camera.lookAt(0, 0.6, 0);
+
+    // In showroom, clean dry reflection
+    this.wetness = 0.0;
+    this.city.setWetness(0.0);
+    if (this.rainPoints) (this.rainPoints.material as THREE.PointsMaterial).opacity = 0;
+    if (this.tireSprayPoints) (this.tireSprayPoints.material as THREE.PointsMaterial).opacity = 0;
+    soundEngine.updateRain(0);
   }
 
   public setupRace(vehicleConfig: VehicleConfig) {
@@ -179,7 +266,7 @@ export class RacingScene {
     this.shakeIntensity = Math.min(1.2, this.shakeIntensity + amount);
   }
 
-  public update(delta: number, settings: GameSettings) {
+  public update(delta: number, settings: GameSettings, gameMode: GameMode = 'ENDLESS') {
     if (this.isShowroom) {
       // Rotate showroom camera smoothly around the showcase car
       this.showroomAngle += delta * 0.35;
@@ -194,11 +281,14 @@ export class RacingScene {
         w.rotation.x += delta * 0.5;
       });
     } else {
-      // 1. Update City chunk wrapping & particles
+      // 1. UPDATE DYNAMIC WEATHER SYSTEM
+      this.updateWeather(delta, settings, gameMode);
+
+      // 2. Update City chunk wrapping & speed particles
       const speedRatio = Math.min(1.0, this.physics.speed / this.physics.maxSpeed);
       this.city.update(this.physics.z, speedRatio);
 
-      // 2. Headlight Beams tracking player
+      // 3. Headlight Beams tracking player
       const carPos = this.playerCar.rootGroup.position;
       this.headlightSpotL.position.set(carPos.x - 0.65, carPos.y + 0.5, carPos.z + 2.2);
       this.headlightSpotL.target.position.set(carPos.x - 0.65, 0.1, carPos.z + 45);
@@ -210,7 +300,7 @@ export class RacingScene {
       this.dirLight.position.set(carPos.x + 15, 30, carPos.z + 10);
       this.dirLight.target.position.set(carPos.x, 0, carPos.z + 15);
 
-      // 3. Camera Follow Dynamics
+      // 4. Camera Follow Dynamics
       let desiredCamOffset = new THREE.Vector3(0, 2.7, -6.8);
       let desiredLookOffset = new THREE.Vector3(0, 1.2, 12);
 
@@ -260,17 +350,173 @@ export class RacingScene {
     this.renderer.render(this.scene, this.camera);
   }
 
+  private updateWeather(delta: number, settings: GameSettings, gameMode: GameMode) {
+    // Determine active weather based on settings or difficulty
+    let targetWeather: 'CLEAR_NIGHT' | 'RAIN_STORM' | 'NEON_FOG' = 'CLEAR_NIGHT';
+
+    if (settings.weather === 'RAIN_STORM') {
+      targetWeather = 'RAIN_STORM';
+    } else if (settings.weather === 'NEON_FOG') {
+      targetWeather = 'NEON_FOG';
+    } else if (settings.weather === 'CLEAR_NIGHT') {
+      targetWeather = 'CLEAR_NIGHT';
+    } else {
+      // AUTO_DIFFICULTY: Weather responds dynamically to game mode and distance
+      if (settings.trafficDensity === 'HEAVY' || gameMode === 'CHECKPOINT') {
+        // High difficulty challenge: Stormy rain
+        targetWeather = 'RAIN_STORM';
+      } else if (gameMode === 'FREE_DRIVE') {
+        // Free drive: Cycles through clear and neon fog
+        const cycle = Math.floor(this.physics.z / 1500) % 3;
+        targetWeather = cycle === 1 ? 'NEON_FOG' : 'CLEAR_NIGHT';
+      } else {
+        // Endless & Time Attack: Dynamic transition every 1200m
+        const cycle = Math.floor(this.physics.z / 1200) % 3;
+        targetWeather = cycle === 1 ? 'RAIN_STORM' : cycle === 2 ? 'NEON_FOG' : 'CLEAR_NIGHT';
+      }
+    }
+
+    this.activeWeather = targetWeather;
+
+    // Target wetness
+    if (this.activeWeather === 'RAIN_STORM') {
+      this.targetWetness = 1.0;
+    } else if (this.activeWeather === 'NEON_FOG') {
+      this.targetWetness = 0.35;
+    } else {
+      this.targetWetness = 0.0;
+    }
+
+    // Smooth wetness transitions
+    const wetRate = this.targetWetness > this.wetness ? 0.4 : 0.15;
+    this.wetness += (this.targetWetness - this.wetness) * Math.min(1, wetRate * delta);
+
+    // Apply wet road surface PBR shader properties
+    this.city.setWetness(this.wetness);
+
+    // Audio rain ambience
+    soundEngine.updateRain(this.wetness);
+
+    // Atmospheric Fog & Ambient Lighting
+    const fog = this.scene.fog as THREE.FogExp2;
+    if (this.activeWeather === 'RAIN_STORM') {
+      fog.density = THREE.MathUtils.lerp(fog.density, 0.012, delta * 2);
+      this.scene.background = new THREE.Color(0x06090e);
+      fog.color.setHex(0x06090e);
+      this.dirLight.intensity = this.isFlashingLightning ? 4.2 : 1.1;
+      this.hemiLight.color.setHex(0x334466);
+    } else if (this.activeWeather === 'NEON_FOG') {
+      fog.density = THREE.MathUtils.lerp(fog.density, 0.015, delta * 2);
+      this.scene.background = new THREE.Color(0x120716);
+      fog.color.setHex(0x120716);
+      this.dirLight.intensity = 1.3;
+      this.hemiLight.color.setHex(0x663366);
+    } else {
+      fog.density = THREE.MathUtils.lerp(fog.density, 0.0075, delta * 2);
+      this.scene.background = new THREE.Color(0x07070a);
+      fog.color.setHex(0x07070a);
+      this.dirLight.intensity = 1.6;
+      this.hemiLight.color.setHex(0x4466aa);
+    }
+
+    // Lightning Flash Logic during Rain Storm
+    if (this.activeWeather === 'RAIN_STORM') {
+      this.lightningTimer -= delta;
+      if (this.lightningTimer <= 0) {
+        this.isFlashingLightning = true;
+        this.lightningFlashDuration = 0.14;
+        this.lightningTimer = 9.0 + Math.random() * 14.0;
+        soundEngine.playThunder();
+        if (!settings.reducedMotion) {
+          this.triggerScreenShake(0.32);
+        }
+      }
+
+      if (this.isFlashingLightning) {
+        this.lightningFlashDuration -= delta;
+        if (this.lightningFlashDuration <= 0) {
+          this.isFlashingLightning = false;
+        }
+      }
+    } else {
+      this.isFlashingLightning = false;
+    }
+
+    // Update Rain Particles
+    if (this.rainPoints && this.rainPositions && settings.particles) {
+      const pos = this.rainPositions;
+      const rMat = this.rainPoints.material as THREE.PointsMaterial;
+      const pZ = this.physics.z;
+      const speed = this.physics.speed;
+
+      rMat.opacity = Math.max(0, this.wetness * 0.75);
+
+      if (this.wetness > 0.05) {
+        const fallSpeed = (36 + speed * 0.15) * delta;
+        const slantSpeed = (speed * 0.35) * delta;
+
+        for (let i = 0; i < this.rainCount; i++) {
+          pos[i * 3 + 1] -= fallSpeed; // Downward Y
+          pos[i * 3 + 2] -= slantSpeed; // Slanted relative to car
+
+          // Wrap back to top around player's current Z
+          if (pos[i * 3 + 1] < 0 || pos[i * 3 + 2] < pZ - 20) {
+            pos[i * 3 + 1] = 22 + Math.random() * 8;
+            pos[i * 3 + 2] = pZ + Math.random() * 85;
+            pos[i * 3] = (Math.random() - 0.5) * 36;
+          } else if (pos[i * 3 + 2] > pZ + 95) {
+            pos[i * 3 + 2] = pZ - 10 + Math.random() * 20;
+          }
+        }
+        this.rainPoints.geometry.attributes.position.needsUpdate = true;
+      }
+    }
+
+    // Update Tire Spray Mist Particles
+    if (this.tireSprayPoints && this.tireSprayPositions && settings.particles) {
+      const sMat = this.tireSprayPoints.material as THREE.PointsMaterial;
+      const carPos = this.playerCar.rootGroup.position;
+      const isSprayActive = this.wetness > 0.25 && this.physics.speed > 8;
+
+      sMat.opacity = isSprayActive ? Math.min(0.55, (this.physics.speed / 50) * this.wetness * 0.5) : 0;
+
+      if (isSprayActive) {
+        const sPos = this.tireSprayPositions;
+        for (let i = 0; i < this.tireSprayCount; i++) {
+          // Spray moves backwards and spreads out
+          sPos[i * 3 + 2] -= (this.physics.speed * 0.75 + 10) * delta;
+          sPos[i * 3 + 1] += 0.4 * delta; // rises slightly
+
+          // Reset spray behind wheels
+          if (sPos[i * 3 + 2] < carPos.z - 12 || Math.random() < 0.08) {
+            const side = i % 2 === 0 ? -0.95 : 0.95;
+            sPos[i * 3] = carPos.x + side + (Math.random() - 0.5) * 0.4;
+            sPos[i * 3 + 1] = 0.15 + Math.random() * 0.25;
+            sPos[i * 3 + 2] = carPos.z - 1.6 - Math.random() * 0.5;
+          }
+        }
+        this.tireSprayPoints.geometry.attributes.position.needsUpdate = true;
+      }
+    }
+  }
+
   public applySettings(settings: GameSettings) {
     if (this.renderer) {
       if (settings.graphicsQuality === 'LOW') {
         this.renderer.setPixelRatio(1);
         this.renderer.shadowMap.enabled = false;
+        this.rainCount = 400;
+        this.tireSprayCount = 30;
       } else if (settings.graphicsQuality === 'MEDIUM') {
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
         this.renderer.shadowMap.enabled = !this.isSoftwareGl;
+        this.rainCount = 1000;
+        this.tireSprayCount = 70;
       } else {
         this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
         this.renderer.shadowMap.enabled = !this.isSoftwareGl;
+        this.rainCount = 1800;
+        this.tireSprayCount = 120;
       }
     }
   }

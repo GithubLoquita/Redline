@@ -20,7 +20,7 @@ export class CityEnvironment {
   public laneCount = 4;
 
   // Materials
-  private roadMaterial: THREE.MeshStandardMaterial;
+  public roadMaterial: THREE.MeshPhysicalMaterial;
   private markMaterial: THREE.MeshBasicMaterial;
   private yellowLineMaterial: THREE.MeshBasicMaterial;
   private guardrailMaterial: THREE.MeshStandardMaterial;
@@ -44,7 +44,7 @@ export class CityEnvironment {
     actx.fillStyle = '#151619';
     actx.fillRect(0, 0, 512, 512);
 
-    // Subtle road grit
+    // Subtle road grit & subtle puddle contours
     for (let i = 0; i < 4000; i++) {
       const g = 25 + Math.random() * 25;
       actx.fillStyle = `rgb(${g}, ${g}, ${g})`;
@@ -55,10 +55,13 @@ export class CityEnvironment {
     roadTexture.wrapT = THREE.RepeatWrapping;
     roadTexture.repeat.set(1, 16);
 
-    this.roadMaterial = new THREE.MeshStandardMaterial({
+    this.roadMaterial = new THREE.MeshPhysicalMaterial({
       map: roadTexture,
-      roughness: 0.8,
-      metalness: 0.1,
+      roughness: 0.82,
+      metalness: 0.08,
+      clearcoat: 0.0,
+      clearcoatRoughness: 0.5,
+      reflectivity: 0.5,
     });
 
     this.markMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -396,5 +399,15 @@ export class CityEnvironment {
       mat.opacity = 0.2 + playerSpeedRatio * 0.65;
       mat.size = 0.2 + playerSpeedRatio * 0.4;
     }
+  }
+
+  public setWetness(amount: number) {
+    const clamped = Math.max(0, Math.min(1, amount));
+    // As wetness increases, asphalt becomes darker, mirror-reflective and glossy
+    this.roadMaterial.roughness = THREE.MathUtils.lerp(0.82, 0.14, clamped);
+    this.roadMaterial.clearcoat = THREE.MathUtils.lerp(0.0, 1.0, clamped);
+    this.roadMaterial.clearcoatRoughness = THREE.MathUtils.lerp(0.5, 0.05, clamped);
+    this.roadMaterial.metalness = THREE.MathUtils.lerp(0.08, 0.45, clamped);
+    this.roadMaterial.needsUpdate = true;
   }
 }

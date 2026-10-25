@@ -71,6 +71,9 @@ export default function App() {
   const [countdownNum, setCountdownNum] = useState<number | string>(3);
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [gameOverReason, setGameOverReason] = useState('VEHICLE INTEGRITY DEPLETED');
+  const [activeWeather, setActiveWeather] = useState<'CLEAR_NIGHT' | 'RAIN_STORM' | 'NEON_FOG'>('CLEAR_NIGHT');
+  const [wetness, setWetness] = useState<number>(0);
+  const [showControls, setShowControls] = useState<boolean>(true);
 
   // Active Vehicle Config
   const selectedVehicle =
@@ -151,7 +154,8 @@ export default function App() {
             inputState,
             sceneRef.current.playerCar,
             settingsRef.current,
-            gameModeRef.current
+            gameModeRef.current,
+            sceneRef.current.wetness
           );
 
           // Check GameOver conditions
@@ -188,7 +192,7 @@ export default function App() {
           }
         }
 
-        sceneRef.current.update(dt, settingsRef.current);
+        sceneRef.current.update(dt, settingsRef.current, gameModeRef.current);
       }
 
       animId = requestAnimationFrame(tick);
@@ -220,6 +224,8 @@ export default function App() {
       if (gameState === 'PLAYING' && sceneRef.current) {
         setStats({ ...sceneRef.current.physics.stats });
         setPlayerLaneX(sceneRef.current.physics.x);
+        setActiveWeather(sceneRef.current.activeWeather);
+        setWetness(sceneRef.current.wetness);
       }
     }, 50);
 
@@ -351,9 +357,15 @@ export default function App() {
             onTogglePause={() => setGameState('PAUSED')}
             onToggleCamera={handleToggleCamera}
             onToggleMute={handleToggleMute}
+            onToggleControls={() => setShowControls(!showControls)}
+            showControls={showControls}
             playerLaneX={playerLaneX}
+            activeWeather={activeWeather}
+            wetness={wetness}
           />
-          {inputRef.current && <MobileControls inputManager={inputRef.current} />}
+          {inputRef.current && (
+            <MobileControls inputManager={inputRef.current} visible={showControls} />
+          )}
         </>
       )}
 

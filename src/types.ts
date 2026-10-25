@@ -23,12 +23,15 @@ export interface VehicleConfig {
   locked?: boolean;
 }
 
+export type WeatherType = 'CLEAR_NIGHT' | 'RAIN_STORM' | 'NEON_FOG' | 'AUTO_DIFFICULTY';
+
 export interface GameSettings {
   graphicsQuality: 'LOW' | 'MEDIUM' | 'HIGH';
   speedUnit: 'KMH' | 'MPH';
   steeringSensitivity: number; // 0.5 - 2.0
   steeringAssist: boolean;
   trafficDensity: 'LIGHT' | 'NORMAL' | 'HEAVY';
+  weather: WeatherType;
   shadows: boolean;
   particles: boolean;
   reducedMotion: boolean;

@@ -32,6 +32,11 @@ class SoundEngine {
   private nitroNoiseSource: AudioBufferSourceNode | null = null;
   private isNitroPlaying = false;
 
+  // Rain Sound Nodes
+  private rainSource: AudioBufferSourceNode | null = null;
+  private rainGain: GainNode | null = null;
+  private rainFilter: BiquadFilterNode | null = null;
+
   // Settings
   private settings: GameSettings = {
     graphicsQuality: 'HIGH',
@@ -39,6 +44,7 @@ class SoundEngine {
     steeringSensitivity: 1.0,
     steeringAssist: true,
     trafficDensity: 'NORMAL',
+    weather: 'AUTO_DIFFICULTY',
     shadows: true,
     particles: true,
     reducedMotion: false,
@@ -76,6 +82,7 @@ class SoundEngine {
       this.createNoiseBuffer();
       this.setupMotorSynth();
       this.setupTireSqueal();
+      this.setupRainSound();
 
       this.applySettings(this.settings);
       this.isInitialized = true;
@@ -399,6 +406,79 @@ class SoundEngine {
     } catch {}
   }
 
+  private setupRainSound() {
+    if (!this.ctx || !this.sfxGain || !this.noiseBuffer) return;
+    this.rainFilter = this.ctx.createBiquadFilter();
+    this.rainFilter.type = 'lowpass';
+    this.rainFilter.frequency.setValueAtTime(1400, this.ctx.currentTime);
+    this.rainFilter.Q.setValueAtTime(1.0, this.ctx.currentTime);
+
+    this.rainGain = this.ctx.createGain();
+    this.rainGain.gain.setValueAtTime(0, this.ctx.currentTime);
+
+    this.rainFilter.connect(this.rainGain);
+    this.rainGain.connect(this.sfxGain);
+
+    try {
+      this.rainSource = this.ctx.createBufferSource();
+      this.rainSource.buffer = this.noiseBuffer;
+      this.rainSource.loop = true;
+      this.rainSource.connect(this.rainFilter);
+      this.rainSource.start();
+    } catch {}
+  }
+
+  public updateRain(intensity: number) {
+    if (!this.ctx || !this.rainGain) return;
+    const t = this.ctx.currentTime;
+    const vol = this.settings.isMuted
+      ? 0
+      : Math.max(0, Math.min(1, intensity)) * 0.42 * this.settings.sfxVolume * this.settings.masterVolume;
+    this.rainGain.gain.setTargetAtTime(vol, t, 0.1);
+  }
+
+  public playThunder() {
+    if (!this.ctx || !this.sfxGain || this.settings.isMuted) return;
+    try {
+      const t = this.ctx.currentTime;
+      // Deep low frequency rumble
+      const osc = this.ctx.createOscillator();
+      const oscGain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(55, t);
+      osc.frequency.exponentialRampToValueAtTime(18, t + 1.8);
+
+      const vol = 0.7 * this.settings.sfxVolume * this.settings.masterVolume;
+      oscGain.gain.setValueAtTime(vol, t);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
+
+      osc.connect(oscGain);
+      oscGain.connect(this.sfxGain);
+      osc.start(t);
+      osc.stop(t + 2.1);
+
+      // Lowpass rumble noise burst
+      if (this.noiseBuffer) {
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(280, t);
+        filter.frequency.linearRampToValueAtTime(80, t + 2.2);
+
+        const nGain = this.ctx.createGain();
+        nGain.gain.setValueAtTime(vol * 0.6, t);
+        nGain.gain.exponentialRampToValueAtTime(0.001, t + 2.2);
+
+        noise.connect(filter);
+        filter.connect(nGain);
+        nGain.connect(this.sfxGain);
+        noise.start(t);
+        noise.stop(t + 2.3);
+      }
+    } catch {}
+  }
+
   public applySettings(settings: GameSettings) {
     this.settings = { ...settings };
     if (!this.ctx) return;
@@ -417,6 +497,9 @@ class SoundEngine {
     }
     if (this.motorGain) {
       this.motorGain.gain.setValueAtTime(0, this.ctx?.currentTime || 0);
+    }
+    if (this.rainGain) {
+      this.rainGain.gain.setValueAtTime(0, this.ctx?.currentTime || 0);
     }
   }
 }
